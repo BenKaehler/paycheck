@@ -68,6 +68,8 @@ def simulate_all_samples(biom_file, sv_to_ref_seq_file, sv_to_ref_tax_file,
         reference_taxonomy = Artifact.import_data(
             'FeatureData[Taxonomy]', ref_taxa,
             view_type='HeaderlessTSVTaxonomyFormat')
+        reference_sequences = Artifact.import_data(
+            'FeatureData[Sequence]', ref_seqs)
         taxonomy_classification = Artifact.load(sv_to_ref_tax_file)
         for fold in range(k):
             training_set = extract_sample(
@@ -77,7 +79,8 @@ def simulate_all_samples(biom_file, sv_to_ref_seq_file, sv_to_ref_tax_file,
             unobserved_weight = 1e-6
             normalise = False
             weights = clawback.methods.generate_class_weights(
-                reference_taxonomy, table, taxonomy_classification)
+                reference_taxonomy, reference_sequences,
+                table, taxonomy_classification)
             weights = weights.class_weight
             weights_filename = \
                 'weights-normalise-%s-unobserved-weight-%g-fold-%d.qza' %\
@@ -227,7 +230,7 @@ def denoise(tmpdir, dada_in_dirs):
 
     cmd = 'run_traceable_dada_paired.R'.split() +\
         dada_in_dirs + [post_dada_filename] + dada_tmp_dirs +\
-        '250 250 0 0 Inf 0 none 1 4 1000000'.split() + dada_out_dirs
+        '250 250 0 0 Inf 0 none 1 1 1000000'.split() + dada_out_dirs
     subprocess.run(cmd, check=True)
 
     return dada_out_dirs, dada_tmp_dirs
