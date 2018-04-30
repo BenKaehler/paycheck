@@ -25,6 +25,80 @@ from mpiutils import dispatcher, mpi_logging
 @click.command()
 @click.option('--biom-file', required=True, type=click.Path(exists=True),
               help='Sample table with SVs for observation ids (biom)')
+@click.option('--missed-sample-file', required=True,
+              type=click.Path(exists=True),
+              help='Basenames of the sample files that failed generation')
+@click.option('--sv-to-ref-seq-file', required=True,
+              type=click.Path(exists=True),
+              help='BLAST mapping from SVs to ref seq labels (tsv)')
+@click.option('--ref-taxa', required=True, type=click.Path(exists=True),
+              help='Greengenes reference taxa (tsv)')
+@click.option('--ref-seqs', required=True, type=click.Path(exists=True),
+              help='Greengenes reference sequences (fasta)')
+@click.option('--expected-dir', required=True, type=click.Path(exists=True),
+              help='Output directory for expected taxa Artifacts')
+@click.option('--abundances-dir', required=True, type=click.Path(exists=True),
+              help='Output directory for expected taxa frequency Artifacts')
+@click.option('--sequences-dir', required=True, type=click.Path(exists=True),
+              help='Output directory for the simulated SV Artifacts')
+@click.option('--tmp-dir', type=click.Path(exists=False),
+              help='Temp dir (gets left behind on simulation exception)')
+@click.option('--log-file', type=click.Path(), help='Log file')
+@click.option('--log-level',
+              type=click.Choice('DEBUG INFO WARNING ERROR CRITICAL'.split()),
+              default='WARNING', help='Log level')
+def simulate_missed_samples(biom_file, missed_sample_file, sv_to_ref_seq_file,
+                            ref_taxa, ref_seqs, expected_dir, abundances_dir,
+                            sequences_dir, tmp_dir=None, log_file=None,
+                            log_level='DEBUG'):
+    setup_logging(log_level, log_file)
+
+    if dispatcher.am_dispatcher():
+        logging.info(locals())
+        all_samples = biom.load_table(biom_file)
+        missed_samples = load_missed_samples(missed_sample_file)
+
+    def process_sample(basename_sample):
+        basename, sample = basename_sample
+        try:
+            exp_filename = join(expected_dir, basename)
+            abund_filename = join(abundances_dir, basename)
+            seqs_filename = join(sequences_dir, basename)
+            generate_triple(
+                basename[:-4], sample, sv_to_ref_seq_file, ref_taxa, ref_seqs,
+                exp_filename, abund_filename, seqs_filename, tmp_dir)
+            logging.info('Done ' + basename)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:
+            logging.warning('Skipping ' + basename + ':\n' + format_exc())
+
+    def sample_generator():
+        for fold, sample_id in missed_samples:
+            basename = sample_id + '-fold-' + str(fold) + '.qza'
+            yield basename, extract_sample([sample_id], all_samples)
+
+    result = dispatcher.farm(process_sample, sample_generator())
+    if result:
+        list(result)
+
+
+def load_missed_samples(missed_sample_file):
+    with open(missed_sample_file) as ms_fh:
+        missed_samples = []
+        for line in ms_fh:
+            line = line.strip()
+            if line.endswith('.qza'):
+                line = line[:-4]
+            fold = int(line.rsplit('-', 1)[-1])
+            sample_id = line.rsplit('-', 2)[0]
+            missed_samples.append((fold, sample_id))
+        return missed_samples
+
+
+@click.command()
+@click.option('--biom-file', required=True, type=click.Path(exists=True),
+              help='Sample table with SVs for observation ids (biom)')
 @click.option('--sv-to-ref-seq-file', required=True,
               type=click.Path(exists=True),
               help='BLAST mapping from SVs to ref seq labels (tsv)')
@@ -48,7 +122,8 @@ from mpiutils import dispatcher, mpi_logging
 @click.option('--tmp-dir', type=click.Path(exists=False),
               help='Temp dir (gets left behind on simulation exception)')
 @click.option('--log-file', type=click.Path(), help='Log file')
-@click.option('--log-level', type=click.Choice(['WARNING', 'INFO', 'DEBUG']),
+@click.option('--log-level',
+              type=click.Choice('DEBUG INFO WARNING ERROR CRITICAL'.split()),
               default='WARNING', help='Log level')
 def simulate_all_samples(biom_file, sv_to_ref_seq_file, sv_to_ref_tax_file,
                          ref_taxa, ref_seqs, weights_dir,
