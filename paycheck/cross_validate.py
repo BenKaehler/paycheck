@@ -49,7 +49,7 @@ def cross_validate(empirical_samples, ref_taxa, ref_seqs, results_dir,
     setup_logging(log_level, log_file)
     logging.info(locals())
 
-    # Reduce the emprical samples to pure taxonomy-level information
+    # Reduce the empirical samples to pure taxonomy-level information
     biom_path = join(intermediate_dir, 'taxonomy_samples.biom')
     if not os.path.exists(biom_path):
         taxonomy_samples = map_svs_to_taxa(
