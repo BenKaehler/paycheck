@@ -15,13 +15,11 @@ from .cross_validate import setup_logging
               help='Directory that will contain the result subdirectories')
 @click.option('--intermediate-dir', default=tempfile.TemporaryDirectory(),
               type=click.Path(exists=True), help='Directory for checkpointing')
-@click.option('--n-jobs', type=int, default=1,
-              help='Number of jobs for parallel classification')
 @click.option('--log-file', type=click.Path(), help='Log file')
 @click.option('--log-level',
               type=click.Choice('DEBUG INFO WARNING ERROR CRITICAL'.split()),
               default='WARNING', help='Log level')
-def shannon(results_dir, intermediate_dir, n_jobs, log_file, log_level):
+def shannon(results_dir, intermediate_dir, log_file, log_level):
     # set up logging
     setup_logging(log_level, log_file)
     logging.info(locals())
