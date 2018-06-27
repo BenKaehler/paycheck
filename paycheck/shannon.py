@@ -91,7 +91,7 @@ def diversity(results_dir, intermediate_dir, tree, log_file, log_level):
             dm = diversity_plugin.methods.beta_phylogenetic_alt(
                 table=table, phylogeny=tree, metric=m)
         else:
-            dm = diversity.methods.beta(table=table, metric=m)
+            dm = diversity_plugin.methods.beta(table=table, metric=m)
         distances = dm.distance_matrix.view(
             skbio.DistanceMatrix).condensed_form()
         # we could do something like distance from centroid if we want to get
@@ -110,11 +110,11 @@ def diversity(results_dir, intermediate_dir, tree, log_file, log_level):
     alpha_vector = pd.DataFrame()
     for m in alpha_metrics:
         if m != 'faith_pd':
-            alf = diversity.actions.alpha(table=table, metric=m)
+            alf = diversity_plugin.actions.alpha(table=table, metric=m)
         else:
-            alf = diversity.actions.alpha_phylogenetic(
+            alf = diversity_plugin.actions.alpha_phylogenetic(
                 table=table, phylogeny=tree, metric=m)
-        alf = alf.alpha_diversity.view(pd.Series)
+        alf = alf.alpha_diversity_plugin.view(pd.Series)
         alpha_vector = pd.concat([alpha_vector, alf.to_frame()])
     alpha_vector.to_csv(join(results_dir, 'alpha.tsv'), sep='\t')
 
