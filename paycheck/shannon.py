@@ -24,7 +24,7 @@ def shannon(results_dir, intermediate_dir, log_file, log_level):
     setup_logging(log_level, log_file)
     logging.info(locals())
 
-    # Reduce the empirical samples to pure taxonomy-level information
+    # Load taxonomy-level information
     biom_path = join(intermediate_dir, 'taxonomy_samples.biom')
     taxonomy_samples = biom.load_table(biom_path)
     logging.info('Got taxonomy samples')

@@ -127,6 +127,67 @@ def cross_validate(empirical_samples, ref_taxa, ref_seqs, results_dir,
         logging.info('Done ' + fold)
 
 
+@click.command()
+@click.option('--empirical-samples', required=True,
+              type=click.Path(exists=True),
+              help='Sample table with SVs for observation ids (biom)')
+@click.option('--ref-taxa', required=True, type=click.Path(exists=True),
+              help='Greengenes reference taxa (tsv)')
+@click.option('--ref-seqs', required=True, type=click.Path(exists=True),
+              help='Greengenes reference sequences (fasta)')
+@click.option('--weights', required=True, type=click.Path(exists=True),
+              help='Taxonomy weights for classification (qza)')
+@click.option('--obs-dir', required=True, type=str,
+              help='Subdirectory into which the results will be saved')
+@click.option('--results-dir', required=True, type=click.Path(exists=True),
+              help='Directory that will contain the result subdirectories')
+@click.option('--intermediate-dir', default=tempfile.TemporaryDirectory(),
+              type=click.Path(exists=True), help='Directory for checkpointing')
+@click.option('--k', type=int, default=5,
+              help='Number of folds for cross validation (default 10)')
+@click.option('--n-jobs', type=int, default=1,
+              help='Number of jobs for parallel classification')
+@click.option('--log-file', type=click.Path(), help='Log file')
+@click.option('--log-level',
+              type=click.Choice('DEBUG INFO WARNING ERROR CRITICAL'.split()),
+              default='WARNING', help='Log level')
+def cross_validate_for_weights(
+        empirical_samples, ref_taxa, ref_seqs, weights, obs_dir, results_dir,
+        intermediate_dir, n_jobs, log_file, log_level):
+    # set up logging
+    setup_logging(log_level, log_file)
+    logging.info(locals())
+
+    # load taxonomy-level information
+    biom_path = join(intermediate_dir, 'taxonomy_samples.biom')
+    taxonomy_samples = biom.load_table(biom_path)
+    logging.info('Got taxonomy samples')
+
+    # load folds
+    taxon_defaults_file = join(intermediate_dir, 'taxon_defaults.json')
+    with open(taxon_defaults_file) as fh:
+        taxon_defaults = json.load(fh)
+    folds = glob.glob(join(intermediate_dir, 'fold-*'))
+    logging.info('Got folds')
+
+    # for each fold
+    for fold in folds:
+        # simulate the test samples
+        test_samples, expected = simulate_samples(
+            taxonomy_samples, fold, taxon_defaults, ref_taxa, ref_seqs)
+        # generate the training taxa, seqs, ref_seqs (weights not used)
+        train_taxa, train_seqs, ref_seqs_art, _ = get_artifacts(
+            taxonomy_samples, fold, taxon_defaults, ref_taxa, ref_seqs)
+        # load the weights
+        weights = Artifact.load(weights)
+        # train the weighted classifier and classify the test samples
+        classification = classify_samples(
+            test_samples, train_taxa, ref_seqs_art, 0.7, n_jobs, weights)
+        # save the classified taxonomy artifacts
+        save_observed(results_dir, test_samples, classification, obs_dir)
+        logging.info('Done ' + fold)
+
+
 def save_observed(results_dir, test_samples, classification, dirname):
     classification = classification.view(DataFrame)
     tax_map = classification['Taxon']
