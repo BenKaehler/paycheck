@@ -8,7 +8,8 @@ import biom
 from numpy import log
 import numpy as np
 import pandas as pd
-from qiime2.plugins import diversity
+from qiime2 import Artifact
+from qiime2.plugins import diversity as diversity_plugin
 from qiime2.plugins import phylogeny
 import skbio
 
@@ -29,7 +30,7 @@ def shannon(results_dir, intermediate_dir, log_file, log_level):
     setup_logging(log_level, log_file)
     logging.info(locals())
 
-    # Load taxonomy-level information
+    # load taxonomy-level information
     biom_path = join(intermediate_dir, 'taxonomy_samples.biom')
     taxonomy_samples = biom.load_table(biom_path)
     logging.info('Got taxonomy samples')
@@ -44,7 +45,34 @@ def shannon(results_dir, intermediate_dir, log_file, log_level):
                    'h': h, 'jsd': jsd, 'n': len(taxonomy_samples.ids())},
                   shannon_out)
 
-    table = qiime2.Artifact.import_data(
+
+@click.command()
+@click.option('--results-dir', required=True, type=click.Path(exists=True),
+              help='Directory that will contain the result subdirectories')
+@click.option('--intermediate-dir', default=tempfile.TemporaryDirectory(),
+              type=click.Path(exists=True), help='Directory for checkpointing')
+@click.option('--tree', required=True, type=click.Path(exists=True),
+              help='Tree file (newick)')
+@click.option('--log-file', type=click.Path(), help='Log file')
+@click.option('--log-level',
+              type=click.Choice('DEBUG INFO WARNING ERROR CRITICAL'.split()),
+              default='WARNING', help='Log level')
+def diversity(results_dir, intermediate_dir, tree, log_file, log_level):
+    # set up logging
+    setup_logging(log_level, log_file)
+    logging.info(locals())
+
+    # load taxonomy-level information
+    biom_path = join(intermediate_dir, 'taxonomy_samples.biom')
+    taxonomy_samples = biom.load_table(biom_path)
+    logging.info('Got taxonomy samples')
+
+    weighted_h, weighted_jsd = get_stats(taxonomy_samples)
+    taxonomy_samples.norm()
+    h, jsd = get_stats(taxonomy_samples)
+    logging.info('Got stats')
+
+    table = Artifact.import_data(
         'FeatureTable[Frequency]', taxonomy_samples)
 
     beta_metrics = ['braycurtis', 'jaccard']
@@ -54,14 +82,14 @@ def shannon(results_dir, intermediate_dir, log_file, log_level):
     if exists(tree_path):
         beta_metrics.extend(beta_p_metrics)
         alpha_metrics.append('faith_pd')
-        tree = qiime2.Artifact.import_data('Phylogeny[Unrooted]', tree_path)
-        tree = qiime.phylogeny.methods.midpoint_root(tree=tree).rooted_tree
+        tree = Artifact.import_data('Phylogeny[Unrooted]', tree)
+        tree = phylogeny.methods.midpoint_root(tree=tree).rooted_tree
 
     distance_log = dict()
     for m in beta_metrics:
         if m in beta_p_metrics:
-            dm = diversity.methods.beta_phylogenetic_alt(
-                table=table, phylogeny = tree, metric=m)
+            dm = diversity_plugin.methods.beta_phylogenetic_alt(
+                table=table, phylogeny=tree, metric=m)
         else:
             dm = diversity.methods.beta(table=table, metric=m)
         distances = dm.distance_matrix.view(
@@ -85,7 +113,7 @@ def shannon(results_dir, intermediate_dir, log_file, log_level):
             alf = diversity.actions.alpha(table=table, metric=m)
         else:
             alf = diversity.actions.alpha_phylogenetic(
-                table=table, phylogeny = tree, metric=m)
+                table=table, phylogeny=tree, metric=m)
         alf = alf.alpha_diversity.view(pd.Series)
         alpha_vector = pd.concat([alpha_vector, alf.to_frame()])
     alpha_vector.to_csv(join(results_dir, 'alpha.tsv'), sep='\t')
