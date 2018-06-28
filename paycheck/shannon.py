@@ -65,25 +65,19 @@ def diversity(results_dir, intermediate_dir, tree, log_file, log_level):
     # load taxonomy-level information
     biom_path = join(intermediate_dir, 'taxonomy_samples.biom')
     taxonomy_samples = biom.load_table(biom_path)
-    logging.info('Got taxonomy samples')
-
-    weighted_h, weighted_jsd = get_stats(taxonomy_samples)
-    taxonomy_samples.norm()
-    h, jsd = get_stats(taxonomy_samples)
-    logging.info('Got stats')
-
     table = Artifact.import_data(
         'FeatureTable[Frequency]', taxonomy_samples)
+    logging.info('Got taxonomy samples')
 
     beta_metrics = ['braycurtis', 'jaccard']
     beta_p_metrics = ['unweighted_unifrac', 'weighted_unifrac']
     alpha_metrics = ['shannon', 'observed_otus', 'pielou_e', 'gini_index']
-    tree_path = join(intermediate_dir, '99_otus.tree')
-    if exists(tree_path):
+    if exists(tree):
         beta_metrics.extend(beta_p_metrics)
         alpha_metrics.append('faith_pd')
         tree = Artifact.import_data('Phylogeny[Unrooted]', tree)
         tree = phylogeny.methods.midpoint_root(tree=tree).rooted_tree
+        logging.info('Got tree')
 
     distance_log = dict()
     for m in beta_metrics:
@@ -104,6 +98,7 @@ def diversity(results_dir, intermediate_dir, tree, log_file, log_level):
                            'median': np.percentile(distances, 50),
                            '75percentile': np.percentile(distances, 75),
                            'std': distances.std()}
+        logging.info('Got {0}'.format(m))
     with open(join(results_dir, 'distances.json'), 'w') as distances_out:
         json.dump(distance_log, distances_out)
 
@@ -114,9 +109,12 @@ def diversity(results_dir, intermediate_dir, tree, log_file, log_level):
         else:
             alf = diversity_plugin.actions.alpha_phylogenetic(
                 table=table, phylogeny=tree, metric=m)
-        alf = alf.alpha_diversity_plugin.view(pd.Series)
-        alpha_vector = pd.concat([alpha_vector, alf.to_frame()])
+        alf = alf.alpha_diversity.view(pd.Series)
+        alpha_vector = pd.concat(
+            [alpha_vector, alf.to_frame()], sort=True, axis=1)
+        logging.info('Got {0}'.format(m))
     alpha_vector.to_csv(join(results_dir, 'alpha.tsv'), sep='\t')
+    logging.info('All done :)')
 
 
 def get_stats(taxonomy_samples):

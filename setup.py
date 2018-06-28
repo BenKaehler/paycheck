@@ -11,7 +11,7 @@ setup(
     packages=find_packages(),
     package_data={'paycheck.tests': ['data/*']},
     entry_points={
-        'console_scripts': 
+        'console_scripts':
         ['paycheck_simulate=paycheck.simulate:simulate_all_samples',
          'pick_up_the_check=paycheck.simulate:simulate_missed_samples',
          'paycheck_cv=paycheck.cross_validate:cross_validate',
