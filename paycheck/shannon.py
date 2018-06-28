@@ -82,6 +82,7 @@ def diversity(results_dir, intermediate_dir, tree, log_file, log_level):
     distance_log = dict()
     for m in beta_metrics:
         if m in beta_p_metrics:
+            continue
             dm = diversity_plugin.methods.beta_phylogenetic_alt(
                 table=table, phylogeny=tree, metric=m)
         else:
