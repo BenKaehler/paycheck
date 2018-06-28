@@ -16,6 +16,8 @@ setup(
          'pick_up_the_check=paycheck.simulate:simulate_missed_samples',
          'paycheck_cv=paycheck.cross_validate:cross_validate',
          'paycheck_shannon=paycheck.shannon:shannon',
-         'paycheck_diversity=paycheck.shannon:diversity']
+         'paycheck_diversity=paycheck.shannon:diversity',
+         'paycheck_cv_for_weights='
+         'paycheck.cross_validate:cross_validate_for_weights']
     }
 )

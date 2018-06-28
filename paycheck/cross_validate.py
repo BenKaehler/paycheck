@@ -128,9 +128,6 @@ def cross_validate(empirical_samples, ref_taxa, ref_seqs, results_dir,
 
 
 @click.command()
-@click.option('--empirical-samples', required=True,
-              type=click.Path(exists=True),
-              help='Sample table with SVs for observation ids (biom)')
 @click.option('--ref-taxa', required=True, type=click.Path(exists=True),
               help='Greengenes reference taxa (tsv)')
 @click.option('--ref-seqs', required=True, type=click.Path(exists=True),
@@ -143,8 +140,6 @@ def cross_validate(empirical_samples, ref_taxa, ref_seqs, results_dir,
               help='Directory that will contain the result subdirectories')
 @click.option('--intermediate-dir', default=tempfile.TemporaryDirectory(),
               type=click.Path(exists=True), help='Directory for checkpointing')
-@click.option('--k', type=int, default=5,
-              help='Number of folds for cross validation (default 10)')
 @click.option('--n-jobs', type=int, default=1,
               help='Number of jobs for parallel classification')
 @click.option('--log-file', type=click.Path(), help='Log file')
@@ -152,7 +147,7 @@ def cross_validate(empirical_samples, ref_taxa, ref_seqs, results_dir,
               type=click.Choice('DEBUG INFO WARNING ERROR CRITICAL'.split()),
               default='WARNING', help='Log level')
 def cross_validate_for_weights(
-        empirical_samples, ref_taxa, ref_seqs, weights, obs_dir, results_dir,
+        ref_taxa, ref_seqs, weights, obs_dir, results_dir,
         intermediate_dir, n_jobs, log_file, log_level):
     # set up logging
     setup_logging(log_level, log_file)
