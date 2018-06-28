@@ -108,6 +108,7 @@ def diversity(results_dir, intermediate_dir, tree, log_file, log_level):
         if m != 'faith_pd':
             alf = diversity_plugin.actions.alpha(table=table, metric=m)
         else:
+            continue
             alf = diversity_plugin.actions.alpha_phylogenetic(
                 table=table, phylogeny=tree, metric=m)
         alf = alf.alpha_diversity.view(pd.Series)
