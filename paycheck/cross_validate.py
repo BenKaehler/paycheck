@@ -99,7 +99,7 @@ def cross_validate(empirical_samples, ref_taxa, ref_seqs, results_dir,
         test_samples, expected = simulate_samples(
             taxonomy_samples, fold, taxon_defaults, ref_taxa, ref_seqs)
         # Generate the class weights from the training samples
-        train_taxa, train_seqs, ref_seqs_art, weights = get_artifacts(
+        train_taxa, train_seqs, ref_seqs_art, weights = get_train_artifacts(
             taxonomy_samples, fold, taxon_defaults, ref_taxa, ref_seqs)
         # Save out the expected taxonomies and abundances
         save_expected(results_dir, test_samples, expected, train_taxa)
@@ -165,19 +165,20 @@ def cross_validate_for_weights(
     folds = glob.glob(join(intermediate_dir, 'fold-*'))
     logging.info('Got folds')
 
+    # load the weights
+    weights = Artifact.load(weights)
     # for each fold
     for fold in folds:
         # simulate the test samples
         test_samples, expected = simulate_samples(
             taxonomy_samples, fold, taxon_defaults, ref_taxa, ref_seqs)
-        # generate the training taxa, seqs, ref_seqs (weights not used)
-        train_taxa, train_seqs, ref_seqs_art, _ = get_artifacts(
-            taxonomy_samples, fold, taxon_defaults, ref_taxa, ref_seqs)
-        # load the weights
-        weights = Artifact.load(weights)
+        # generate the training taxa, seqs, ref_seqs, reduced weights
+        train_taxa, train_seqs, ref_seqs_art, fold_weights = \
+            get_train_artifacts(taxonomy_samples, fold, taxon_defaults,
+                                ref_taxa, ref_seqs, weights)
         # train the weighted classifier and classify the test samples
         classification = classify_samples(
-            test_samples, train_taxa, ref_seqs_art, 0.7, n_jobs, weights)
+            test_samples, train_taxa, ref_seqs_art, 0.7, n_jobs, fold_weights)
         # save the classified taxonomy artifacts
         save_observed(results_dir, test_samples, classification, obs_dir)
         logging.info('Done ' + fold)
@@ -316,11 +317,15 @@ def simulate_samples(
     return (test_samples, dict(zip(obs_ids, expected)))
 
 
-def get_artifacts(
-        taxonomy_samples, fold, taxon_defaults, ref_taxa, ref_seqs):
-    with open(join(fold, 'sample_train.json')) as fp:
-        train_samples = json.load(fp)
-    train_samples = extract_sample(train_samples, taxonomy_samples)
+def get_train_artifacts(taxonomy_samples, fold, taxon_defaults, ref_taxa,
+                        ref_seqs, weights=None):
+
+    if weights is None:
+        with open(join(fold, 'sample_train.json')) as fp:
+            train_samples = json.load(fp)
+        train_samples = extract_sample(train_samples, taxonomy_samples)
+    else:
+        train_samples = weights.view(Table)
     ref_taxa, ref_seqs = load_references(ref_taxa, ref_seqs)
 
     with open(join(fold, 'seq_train.json')) as fp:
@@ -348,7 +353,6 @@ def get_artifacts(
     logging.info(str(hits[0]) + ' hits')
     logging.info(str(direct_remaps[0]) + ' direct remaps')
     logging.info(str(indirect_remaps[0]) + ' indirect remaps')
-
     train_samples = Artifact.import_data(
         'FeatureTable[Frequency]', train_samples)
 
@@ -367,8 +371,10 @@ def get_artifacts(
         s for s in ref_seqs if s.metadata['id'] in train_seqs)
     train_art = Artifact.import_data(
         'FeatureData[Sequence]', train_iter)
+    unobserved_weight = 1e-6 if weights is None else 0.
     weights = clawback.methods.generate_class_weights(
-        train_taxonomy, train_art, train_samples, eye_taxonomy)
+        train_taxonomy, train_art, train_samples, eye_taxonomy,
+        unobserved_weight=unobserved_weight)
     ref_seqs = Artifact.import_data(
         'FeatureData[Sequence]', DNAIterator(ref_seqs))
     return train_taxonomy, train_art, ref_seqs, weights.class_weight
