@@ -21,6 +21,7 @@ from pandas import DataFrame
 from qiime2 import Artifact
 from qiime2.plugins import clawback, feature_classifier
 from q2_types.feature_data import DNAIterator
+from scipy.sparse import dok_matrix
 
 
 @click.command()
@@ -169,9 +170,8 @@ def cross_validate_for_weights(
     weights = Artifact.load(weights)
     # for each fold
     for fold in folds:
-        # simulate the test samples
-        test_samples, expected = simulate_samples(
-            taxonomy_samples, fold, taxon_defaults, ref_taxa, ref_seqs)
+        # load the simulated test samples
+        test_samples = load_simulated_samples(fold, results_dir)
         # generate the training taxa, seqs, ref_seqs, reduced weights
         train_taxa, train_seqs, ref_seqs_art, fold_weights = \
             get_train_artifacts(taxonomy_samples, fold, taxon_defaults,
@@ -255,6 +255,26 @@ def save_expected(results_dir, test_samples, expected, train_taxa):
                        index=['Frequency'], columns=ids)
         Artifact.import_data('FeatureTable[Frequency]', df).save(
             join(abundance_dir, sample_id + '.qza'))
+
+
+def load_simulated_samples(fold, results_dir):
+    with open(join(fold, 'sample_test.json')) as fp:
+        sample_ids = json.load(fp)
+    expected_dir = join(results_dir, 'expected')
+    test_samples = defaultdict(set)
+    for sample_id in sample_ids:
+        expected = Artifact.load(join(expected_dir, sample_id + '.qza'))
+        for obs_id in expected.view(DataFrame).index:
+            test_samples[obs_id].add(sample_id)
+    obs_ids = list(test_samples)
+    data = dok_matrix((len(obs_ids), len(sample_ids)))
+    s_map = {s: i for i, s in enumerate(sample_ids)}
+    o_map = {o: i for i, o in enumerate(obs_ids)}
+    for obs_id in test_samples:
+        for sample_id in test_samples[obs_id]:
+            data[o_map[obs_id], s_map[sample_id]] = 1
+    test_samples = Table(data, obs_ids, sample_ids)
+    return test_samples
 
 
 def simulate_samples(
