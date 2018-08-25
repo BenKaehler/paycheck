@@ -239,10 +239,8 @@ def cross_validate_average(
                 these_weights = Artifact.load(weights_file).view(Table)
                 these_weights.update_ids(
                     {'Weight': str(i)}, axis='sample', inplace=True)
-                other_weights.merge(these_weights)
+                other_weights = other_weights.merge(these_weights)
     logging.info('Loaded ' + str(other_weights.shape[1]) + ' other weights')
-    other_weights = Artifact.import_data(
-        'FeatureTable[RelativeFrequency]', other_weights)
 
     # for each fold
     for fold in folds:
@@ -256,7 +254,7 @@ def cross_validate_average(
         fold_weights = fold_weights.view(Table)
         fold_weights.update_ids(
             {'Weight': 'fold_weights'}, axis='sample', inplace=True)
-        fold_weights.merge(other_weights)
+        fold_weights = fold_weights.merge(other_weights)
         fold_weights = Artifact.import_data(
             'FeatureTable[RelativeFrequency]', fold_weights)
         # generate the training taxa, seqs, ref_seqs, reduced weights
