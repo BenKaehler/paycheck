@@ -184,6 +184,93 @@ def cross_validate_for_weights(
         logging.info('Done ' + fold)
 
 
+@click.command()
+@click.option('--ref-taxa', required=True, type=click.Path(exists=True),
+              help='Greengenes reference taxa (tsv)')
+@click.option('--ref-seqs', required=True, type=click.Path(exists=True),
+              help='Greengenes reference sequences (fasta)')
+@click.option('--weights', required=True, type=click.Path(exists=True),
+              help='Weights files (list of qzas, one per line)')
+@click.option('--exclude', required=True, type=click.Path(exists=True),
+              help='Weights file to exclude from average (qza)')
+@click.option('--obs-dir', required=True, type=str,
+              help='Subdirectory into which the results will be saved')
+@click.option('--results-dir', required=True, type=click.Path(exists=True),
+              help='Directory that will contain the result subdirectories')
+@click.option('--intermediate-dir', default=tempfile.TemporaryDirectory(),
+              type=click.Path(exists=True), help='Directory for checkpointing')
+@click.option('--n-jobs', type=int, default=1,
+              help='Number of jobs for parallel classification')
+@click.option('--log-file', type=click.Path(), help='Log file')
+@click.option('--log-level',
+              type=click.Choice('DEBUG INFO WARNING ERROR CRITICAL'.split()),
+              default='WARNING', help='Log level')
+def cross_validate_average(
+        ref_taxa, ref_seqs, weights, exclude, obs_dir, results_dir,
+        intermediate_dir, n_jobs, log_file, log_level):
+    # set up logging
+    setup_logging(log_level, log_file)
+    logging.info(locals())
+
+    # load taxonomy-level information
+    biom_path = join(intermediate_dir, 'taxonomy_samples.biom')
+    taxonomy_samples = biom.load_table(biom_path)
+    logging.info('Got taxonomy samples')
+
+    # load folds
+    taxon_defaults_file = join(intermediate_dir, 'taxon_defaults.json')
+    with open(taxon_defaults_file) as fh:
+        taxon_defaults = json.load(fh)
+    folds = glob.glob(join(intermediate_dir, 'fold-*'))
+    logging.info('Got folds')
+
+    # load the weights
+    other_weights = None
+    with open(weights) as fh:
+        for i, weights_file in enumerate(fh):
+            weights_file = weights_file.rstrip()
+            if os.path.samefile(weights_file, exclude):
+                continue
+            if other_weights is None:
+                other_weights = Artifact.load(weights_file).view(Table)
+                other_weights.update_ids(
+                    {'Weight': str(i)}, axis='sample', inplace=True)
+            else:
+                these_weights = Artifact.load(weights_file).view(Table)
+                these_weights.update_ids(
+                    {'Weight': str(i)}, axis='sample', inplace=True)
+                other_weights.merge(these_weights)
+    logging.info('Loaded ' + str(other_weights.shape[1]) + ' other weights')
+    other_weights = Artifact.import_data(
+        'FeatureTable[RelativeFrequency]', other_weights)
+
+    # for each fold
+    for fold in folds:
+        # load the simulated test samples
+        test_samples = load_simulated_samples(fold, results_dir)
+        # generate the class weights from the training samples
+        train_taxa, train_seqs, ref_seqs_art, fold_weights = \
+            get_train_artifacts(taxonomy_samples, fold, taxon_defaults,
+                                ref_taxa, ref_seqs)
+        # join fold weights with other weights
+        fold_weights = fold_weights.view(Table)
+        fold_weights.update_ids(
+            {'Weight': 'fold_weights'}, axis='sample', inplace=True)
+        fold_weights.merge(other_weights)
+        fold_weights = Artifact.import_data(
+            'FeatureTable[RelativeFrequency]', fold_weights)
+        # generate the training taxa, seqs, ref_seqs, reduced weights
+        train_taxa, train_seqs, ref_seqs_art, fold_weights = \
+            get_train_artifacts(taxonomy_samples, fold, taxon_defaults,
+                                ref_taxa, ref_seqs, fold_weights)
+        # train the weighted classifier and classify the test samples
+        classification = classify_samples(
+            test_samples, train_taxa, ref_seqs_art, 0.7, n_jobs, fold_weights)
+        # save the classified taxonomy artifacts
+        save_observed(results_dir, test_samples, classification, obs_dir)
+        logging.info('Done ' + fold)
+
+
 def save_observed(results_dir, test_samples, classification, dirname):
     classification = classification.view(DataFrame)
     tax_map = classification['Taxon']

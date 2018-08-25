@@ -18,6 +18,8 @@ setup(
          'paycheck_shannon=paycheck.shannon:shannon',
          'paycheck_diversity=paycheck.shannon:diversity',
          'paycheck_cv_for_weights='
-         'paycheck.cross_validate:cross_validate_for_weights']
+         'paycheck.cross_validate:cross_validate_for_weights',
+         'paycheck_cv_average='
+         'paycheck.cross_validate:cross_validate_average']
     }
 )
