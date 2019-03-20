@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='paycheck',
-    version='0.0.1',
+    version='0.0.3',
     author='Ben Kaehler',
     author_email='kaehler@gmail.com',
     description='Tools for testing q2-clawback',
