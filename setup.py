@@ -20,6 +20,8 @@ setup(
          'paycheck_cv_for_weights='
          'paycheck.cross_validate:cross_validate_for_weights',
          'paycheck_cv_average='
-         'paycheck.cross_validate:cross_validate_average']
+         'paycheck.cross_validate:cross_validate_average',
+         'paycheck_generate_folds='
+         'paycheck.cross_validate:generate_folds']
     }
 )

@@ -37,7 +37,32 @@ from scipy.sparse import dok_matrix
 @click.option('--intermediate-dir', default=tempfile.TemporaryDirectory(),
               type=click.Path(exists=True), help='Directory for checkpointing')
 @click.option('--k', type=int, default=5,
-              help='Number of folds for cross validation (default 10)')
+              help='Number of folds for cross validation (default 5)')
+@click.option('--n-jobs', type=int, default=1,
+              help='Number of jobs for parallel classification')
+@click.option('--log-file', type=click.Path(), help='Log file')
+@click.option('--log-level',
+              type=click.Choice('DEBUG INFO WARNING ERROR CRITICAL'.split()),
+              default='WARNING', help='Log level')
+def generate_folds(empirical_samples, ref_taxa, ref_seqs, results_dir,
+                   intermediate_dir, k, n_jobs, log_file, log_level):
+    print('this is a stub')
+
+
+@click.command()
+@click.option('--empirical-samples', required=True,
+              type=click.Path(exists=True),
+              help='Sample table with SVs for observation ids (biom)')
+@click.option('--ref-taxa', required=True, type=click.Path(exists=True),
+              help='Greengenes reference taxa (tsv)')
+@click.option('--ref-seqs', required=True, type=click.Path(exists=True),
+              help='Greengenes reference sequences (fasta)')
+@click.option('--results-dir', required=True, type=click.Path(exists=True),
+              help='Directory that will contain the result subdirectories')
+@click.option('--intermediate-dir', default=tempfile.TemporaryDirectory(),
+              type=click.Path(exists=True), help='Directory for checkpointing')
+@click.option('--k', type=int, default=5,
+              help='Number of folds for cross validation (default 5)')
 @click.option('--n-jobs', type=int, default=1,
               help='Number of jobs for parallel classification')
 @click.option('--log-file', type=click.Path(), help='Log file')
