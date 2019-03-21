@@ -25,7 +25,7 @@ cd empo-3
 mkdir ref
 mkdir sediment-non-saline
 ```
-Find the files `99_otus.fasta` and `99_otu_taxonomy.txt` amongst the Greengenes data and copy them into the reference directory (`ref`). Now import them into QIIME 2 Artifacts and extract V4 reads:
+Copy the files `rep_set/99_otus.fasta` and `taxonomy/99_otu_taxonomy.txt` from Greengenes to the reference directory (`ref`). Now import them into QIIME 2 Artifacts and extract V4 reads:
 ```
 cd ref
 qiime tools import \
@@ -83,7 +83,7 @@ paycheck_cv \
   --log-file results/log \
   --log-level DEBUG
 ```
-If you have MPI installed on your system you can use `mpirun` and `--n-jobs` to accelerate the process. 
+If your machine has enough memory, you can use `--n-jobs` to accelerate the process. 
 
 The cross validation results should now be in `bespoke70` and `uniform70` subdirectories of `results`.
 
