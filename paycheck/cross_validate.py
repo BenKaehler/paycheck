@@ -46,7 +46,65 @@ from scipy.sparse import dok_matrix
               default='WARNING', help='Log level')
 def generate_folds(empirical_samples, ref_taxa, ref_seqs, results_dir,
                    intermediate_dir, k, n_jobs, log_file, log_level):
-    print('this is a stub')
+    # set up logging
+
+    # Reduce the empirical samples to pure taxonomy-level information
+
+    # Generate folds
+        # Generate reference sequence folds
+
+        # Generate empirical sample folds
+
+        # Save them down
+
+    # For each fold
+        # Simulate the test samples
+
+        # Save out the expected taxonomies and abundances
+
+        # Generate the class weights from the training samples
+
+        # Save the test seqs, training taxa, training seqs, and weights
+    pass
+
+
+@click.command()
+@click.option('--ref-taxa', required=True, type=click.Path(exists=True),
+              help='Greengenes reference taxa (tsv)')
+@click.option('--ref-seqs', required=True, type=click.Path(exists=True),
+              help='Greengenes reference sequences (fasta)')
+@click.option('--classifier-spec', required=True, type=str,
+              help='JSON-formatted q2-feature-classifier classifier spec')
+@click.option('--obs-dir', required=True, type=str,
+              help='Subdirectory into which the results will be saved')
+@click.option('--results-dir', required=True, type=click.Path(exists=True),
+              help='Directory that will contain the result subdirectories')
+@click.option('--intermediate-dir', default=tempfile.TemporaryDirectory(),
+              type=click.Path(exists=True), help='Directory for checkpointing')
+@click.option('--n-jobs', type=int, default=1,
+              help='Number of jobs for parallel classification')
+@click.option('--log-file', type=click.Path(), help='Log file')
+@click.option('--log-level',
+              type=click.Choice('DEBUG INFO WARNING ERROR CRITICAL'.split()),
+              default='WARNING', help='Log level')
+def cross_validate_classifier(
+        ref_taxa, ref_seqs, classifier_spec, obs_dir, results_dir,
+        intermediate_dir, n_jobs, log_file, log_level):
+    # set up logging
+
+    # load taxonomy-level information
+
+    # load folds
+
+    # for each fold
+        # load the simulated test samples
+
+        # load the test seqs, training taxa, traing seqs, and weights
+
+        # train the weighted classifier and classify the test samples
+
+        # save the classified taxonomy artifacts
+    pass
 
 
 @click.command()
