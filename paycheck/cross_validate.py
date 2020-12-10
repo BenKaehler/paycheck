@@ -815,8 +815,10 @@ def cross_validate_for_weights(
         # load the simulated test samples
         test_samples = load_simulated_samples(fold, results_dir)
         # generate the training taxa, seqs, ref_seqs, reduced weights
-        train_taxa, train_seqs, ref_seqs_art, fold_weights = get_train_artifacts(  # noqa
-            taxonomy_samples, fold, taxon_defaults, ref_taxa, ref_seqs, weights
+        (train_taxa, train_seqs, ref_seqs_art, fold_weights) = \
+            get_train_artifacts(
+                taxonomy_samples, fold, taxon_defaults,
+                ref_taxa, ref_seqs, weights
         )
         # train the weighted classifier and classify the test samples
         classification = classify_samples(
@@ -1119,7 +1121,7 @@ def create_perfect_classifier(
         taxon = ref_taxa[seq.metadata['id']]
         if not weights:
             weight = 1
-        elif weights.exists(taxon):
+        elif weights.exists(taxon, 'observation'):
             weight = float(weights.get_value_by_ids(taxon, 'Weight'))
         else:
             weight = float(weights.min())
