@@ -531,11 +531,16 @@ def cross_validate_perfect(
         "FeatureData[Sequence]", DNAIterator(ref_seqs)
     )
 
+    if not weighted:
+        # create a perfect classifier
+        classifier = create_perfect_classifier(
+            ref_taxa,
+            ref_seqs,
+            confidence
+        )
+
     # for each fold
     for fold in folds:
-        # load new file for different folds
-        weights_file = join(fold, "weights.qza")
-
         # load the simulated test samples
         test_samples = load_simulated_samples(fold, results_dir)
 
@@ -544,17 +549,28 @@ def cross_validate_perfect(
             logging.info("Skipping " + fold)
             continue
 
-        # load the weights
-        weights = Artifact.load(weights_file)
+        if weighted:
+            # load new file for different folds
+            weights_file = join(fold, "weights.qza")
+
+            # load the weights
+            weights = Artifact.load(weights_file)
+
+            # create a perfect classifier
+            classifier = create_perfect_classifier(
+                ref_taxa,
+                ref_seqs,
+                confidence,
+                weights=weights.view(Table)
+            )
 
         # train the weighted classifier and classify the test samples
         classification = classify_samples_perfect(
-            test_samples,
-            ref_taxa,
+            classifier,
             ref_seqs,
-            confidence,
-            weights=weights if weighted else None
+            test_samples
         )
+
         # save the classified taxonomy artifacts
         save_observed(
             classifier_directory, test_samples, classification, obs_dir
@@ -1092,36 +1108,29 @@ def classify_samples_keras(
     return classification
 
 
-def classify_samples_perfect(
-    test_samples,
+def create_perfect_classifier(
     ref_taxa,
     ref_seqs,
     confidence,
     weights=None,
 ):
-    if weights is None:
-        by_seq = defaultdict(set)
-        for seq in ref_seqs.view(DNAIterator):
-            taxon = ref_taxa[seq.metadata['id']]
-            by_seq[str(seq)].add((1, taxon))
-        by_seq = {s: list(list(t) for t in ts) for s, ts in by_seq.items()}
-    else:
-        weights = weights.view(Table)
-        by_seq = defaultdict(list)
-        for seq in ref_seqs.view(DNAIterator):
-            taxon = ref_taxa[seq.metadata['id']]
-            if weights.exists(taxon):
-                w = float(weights.get_value_by_ids(taxon, 'Weight'))
-            else:
-                w = float(weights.min())
-            by_seq[str(seq)].append([w, taxon])
+    by_seq = defaultdict(dict)
+    for seq in ref_seqs.view(DNAIterator):
+        taxon = ref_taxa[seq.metadata['id']]
+        if not weights:
+            weight = 1
+        elif weights.exists(taxon):
+            weight = float(weights.get_value_by_ids(taxon, 'Weight'))
+        else:
+            weight = float(weights.min())
+        by_seq[str(seq)][taxon] = weight
 
     classifier = {}
-    for seq, weighted in by_seq.items():
-        total = sum(w for w, t in weighted)
-        for wt in weighted:
-            wt[0] /= total
-            wt[1] += '; '
+    for seq, weights in by_seq.items():
+        total = sum(weights.values())
+        weighted = []
+        for taxon, weight in weights.items():
+            weighted.append((weight/total, taxon + '; '))
 
         while True:
             new_weighted = Counter()
@@ -1132,7 +1141,10 @@ def classify_samples_perfect(
                 classifier[seq] = mc[1], mc[0]
                 break
             weighted = [(w, t) for t, w in new_weighted.items()]
+    return classifier
 
+
+def classify_samples_perfect(classifier, ref_seqs, test_samples):
     test_ids = set(test_samples.ids(axis="observation"))
     test_seqs = ref_seqs.view(DNAIterator)
     test_seqs = [s for s in test_seqs if s.metadata["id"] in test_ids]
