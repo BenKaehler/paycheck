@@ -479,12 +479,6 @@ def cross_validate_keras(
     type=click.Path(exists=True),
     help="Directory for checkpointing",
 )
-@click.option(
-    "--n-jobs",
-    type=int,
-    default=1,
-    help="Number of jobs for parallel classification",
-)
 @click.option("--log-file", type=click.Path(), help="Log file")
 @click.option(
     "--log-level",
@@ -501,17 +495,23 @@ def cross_validate_keras(
     type=str,
     help="Directory of Classifier",
 )
+@click.option(
+    "--weighted/--not-weighted",
+    default=True,
+    type=bool,
+    help="Perform weighted classification"
+)
 def cross_validate_perfect(
     ref_taxa,
     ref_seqs,
     obs_dir,
     results_dir,
     intermediate_dir,
-    n_jobs,
     log_file,
     log_level,
     confidence,
-    classifier_directory
+    classifier_directory,
+    weighted
 ):
 
     # set up logging
@@ -553,7 +553,7 @@ def cross_validate_perfect(
             ref_taxa,
             ref_seqs,
             confidence,
-            weights=weights
+            weights=weights if weighted else None
         )
         # save the classified taxonomy artifacts
         save_observed(
@@ -1099,13 +1099,17 @@ def classify_samples_perfect(
     confidence,
     weights=None,
 ):
-    weights = weights.view(Table)
-    by_seq = defaultdict(list)
-    for seq in ref_seqs.view(DNAIterator):
-        taxon = ref_taxa[seq.metadata['id']]
-        if weights is None:
-            by_seq[str(seq)].append([1., taxon])
-        else:
+    if weights is None:
+        by_seq = defaultdict(set)
+        for seq in ref_seqs.view(DNAIterator):
+            taxon = ref_taxa[seq.metadata['id']]
+            by_seq[str(seq)].add((1, taxon))
+        by_seq = {s: list(list(t) for t in ts) for s, ts in by_seq.items()}
+    else:
+        weights = weights.view(Table)
+        by_seq = defaultdict(list)
+        for seq in ref_seqs.view(DNAIterator):
+            taxon = ref_taxa[seq.metadata['id']]
             if weights.exists(taxon):
                 w = float(weights.get_value_by_ids(taxon, 'Weight'))
             else:
@@ -1117,15 +1121,17 @@ def classify_samples_perfect(
         total = sum(w for w, t in weighted)
         for wt in weighted:
             wt[0] /= total
+            wt[1] += '; '
 
-        while seq not in classifier:
-            if max(weighted)[0] >= confidence:
-                classifier[seq] = max(weighted)
-            else:
-                new_weighted = Counter()
-                for weight, taxon in weighted:
-                    new_weighted[taxon.rsplit('; ', 1)[0]] += weight
-                weighted = [(w, t) for t, w in new_weighted.items()]
+        while True:
+            new_weighted = Counter()
+            for weight, taxon in weighted:
+                new_weighted[taxon.rsplit('; ', 1)[0]] += weight
+            mc = new_weighted.most_common()[0]
+            if mc[1] >= confidence:
+                classifier[seq] = mc[1], mc[0]
+                break
+            weighted = [(w, t) for t, w in new_weighted.items()]
 
     test_ids = set(test_samples.ids(axis="observation"))
     test_seqs = ref_seqs.view(DNAIterator)
