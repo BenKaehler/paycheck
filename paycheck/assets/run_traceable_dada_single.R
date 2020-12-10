@@ -1,0 +1,227 @@
+#!/usr/bin/env Rscript
+
+###################################################
+# This R script takes an input directory of .fastq.gz files
+# and outputs a tsv file of the dada2 processed sequence
+# table. It is intended for use with the QIIME2 plugin
+# for DADA2.
+#
+# Ex: Rscript run_dada_single.R input_dir output.tsv filtered_dir 200 0 2.0 2 pooled 1.0 0 1000000
+####################################################
+
+####################################################
+#             DESCRIPTION OF ARGUMENTS             #
+####################################################
+# NOTE: All numeric arguments should be zero or positive.
+# NOTE: All numeric arguments save maxEE are expected to be integers.
+# NOTE: Currently the filterered_dir must already exist.
+# NOTE: ALL ARGUMENTS ARE POSITIONAL!
+#
+### FILE SYSTEM ARGUMENTS ###
+#
+# 1) File path to directory with the .fastq.gz files to be processed.
+#    Ex: path/to/dir/with/fastqgzs
+#
+# 2) File path to output tsv file. If already exists, will be overwritten.
+#    Ex: path/to/output_file.tsv
+#
+# 3) File path to directory in which to write the filtered .fastq.gz files. These files are intermediate
+#               for the full workflow. Currently they remain after the script finishes.
+#               Directory must already exist.
+#    Ex: path/to/dir/with/fastqgzs/filtered
+#
+### FILTERING ARGUMENTS ###
+#
+# 4) truncLen - The position at which to truncate reads. Reads shorter
+#               than truncLen will be discarded.
+#               Special values: 0 - no truncation or length filtering.
+#    Ex: 150
+#
+# 5) trimLeft - The number of nucleotides to remove from the start of
+#               each read. Should be less than truncLen for obvious reasons.
+#    Ex: 0
+#
+# 6) maxEE - Reads with expected errors higher than maxEE are discarded.
+#    Ex: 2.0
+#
+# 7) truncQ - Reads are truncated at the first instance of quality score truncQ.
+#                If the read is then shorter than truncLen, it is discarded.
+#    Ex: 2
+#
+### CHIMERA ARGUMENTS ###
+#
+# 8) chimeraMethod - The method used to remove chimeras. Valid options are:
+#               none: No chimera removal is performed.
+#               pooled: All reads are pooled prior to chimera detection.
+#               consensus: Chimeras are detect in samples individually, and a consensus decision
+#                           is made for each sequence variant.
+#    Ex: consensus
+#
+# 9) minParentFold - The minimum abundance of potential "parents" of a sequence being
+#               tested as chimeric, expressed as a fold-change versus the abundance of the sequence being
+#               tested. Values should be greater than or equal to 1 (i.e. parents should be more
+#               abundant than the sequence being tested).
+#    Ex: 1.0
+#
+### SPEED ARGUMENTS ###
+#
+# 10) nthreads - The number of threads to use.
+#                 Special values: 0 - detect available cores and use all.
+#    Ex: 1
+#
+# 11) nreads_learn - The minimum number of reads to learn the error model from.
+#                 Special values: 0 - Use all input reads.
+#    Ex: 1000000
+#
+
+cat(R.version$version.string, "\n")
+
+args <- commandArgs(TRUE)
+inp_dir <- args[[1]]
+out_path <- args[[2]]
+filtered_dir <- args[[3]]
+truncLen <- as.integer(args[[4]])
+trimLeft <- as.integer(args[[5]])
+maxEE <- as.numeric(args[[6]])
+truncQ <- as.integer(args[[7]])
+chimeraMethod <- args[[8]]
+minParentFold <- as.numeric(args[[9]])
+nthreads <- as.integer(args[[10]])
+nreads_learn <- as.integer(args[[11]])
+trace_dir <- args[[12]]
+errQuit <- function(mesg, status=1) {
+  message("Error: ", mesg)
+  q(status=status)
+}
+
+### VALIDATE ARGUMENTS ###
+
+# Input directory is expected to contain .fastq.gz file(s)
+# that have not yet been filtered and globally trimmed
+# to the same length.
+if(!dir.exists(inp_dir)) {
+  errQuit("Input directory does not exist.")
+} else {
+  unfilts <- list.files(inp_dir, pattern=".fastq.gz$", full.names=TRUE)
+  if(length(unfilts) == 0) {
+    errQuit("No input files with the expected filename format found.")
+  }
+}
+
+# Output path is to be a filename (not a directory) and is to be
+# removed and replaced if already present.
+if(dir.exists(out_path)) {
+  errQuit("Output filename is a directory.")
+} else if(file.exists(out_path)) {
+  invisible(file.remove(out_path))
+}
+
+# Convert nthreads to the logical/numeric expected by dada2
+if(nthreads < 0) {
+  errQuit("nthreads must be non-negative.")
+} else if(nthreads == 0) {
+  multithread <- TRUE # detect and use all
+} else if(nthreads == 1) {
+  multithread <- FALSE
+} else {
+  multithread <- nthreads
+}
+
+if(!dir.exists(trace_dir)) {
+  errQuit("Trace directory does not exist.")
+}
+
+### LOAD LIBRARIES ###
+suppressWarnings(library(methods))
+suppressWarnings(library(dada2))
+cat("DADA2 R package version:", as.character(packageVersion("dada2")), "\n")
+
+### TRIM AND FILTER ###
+cat("1) Filtering ")
+filts <- file.path(filtered_dir, basename(unfilts))
+out <- suppressWarnings(filterAndTrim(unfilts, filts, truncLen=truncLen, trimLeft=trimLeft,
+                                      maxEE=maxEE, truncQ=truncQ, rm.phix=TRUE, 
+                                      multithread=multithread))
+cat(ifelse(file.exists(filts), ".", "x"), sep="")
+filts <- list.files(filtered_dir, pattern=".fastq.gz$", full.names=TRUE)
+cat("\n")
+if(length(filts) == 0) { # All reads were filtered out
+  errQuit("No reads passed the filter (was truncLen longer than the read length?)", status=2)
+}
+
+### LEARN ERROR RATES ###
+# Dereplicate enough samples to get nreads_learn total reads
+cat("2) Learning Error Rates\n")
+NREADS <- 0
+drps <- vector("list", length(filts))
+for(i in seq_along(filts)) {
+  drps[[i]] <- derepFastq(filts[[i]])
+  NREADS <- NREADS + sum(drps[[i]]$uniques)
+  if(NREADS > nreads_learn) { break }
+}
+# Run dada in self-consist mode on those samples
+dds <- vector("list", length(filts))
+if(i==1) { # breaks list assignment
+  dds[[1]] <- dada(drps[[1]], err=NULL, selfConsist=TRUE, multithread=multithread, VECTORIZED_ALIGNMENT=FALSE, SSE=1)
+} else { # more than one sample, no problem with list assignment
+  dds[1:i] <- dada(drps[1:i], err=NULL, selfConsist=TRUE, multithread=multithread, VECTORIZED_ALIGNMENT=FALSE, SSE=1)
+}
+err <- dds[[1]]$err_out
+# rm(drps)
+cat("\n")
+
+### PROCESS ALL SAMPLES ###
+# Loop over rest with learned error rates
+cat("3) Denoise remaining samples ")
+if(i < length(filts)) {
+  for(j in seq(i+1,length(filts))) {
+    drps[[j]] <- derepFastq(filts[[j]])
+    { sink("/dev/null"); dds[[j]] <- dada(drps[[j]], err=err, multithread=multithread, VECTORIZED_ALIGNMENT=FALSE, SSE=1); sink(); }
+    cat(".")
+  }
+}
+cat("\n")
+
+for(j in seq(1, length(filts))){
+  map_path <- file.path(trace_dir, gsub('fastq.gz', 'map', basename(filts[[j]])))
+  uniques <- getSequences(drps[[j]])
+  svs <- names(dds[[j]]$denoised[unname(dds[[j]]$map)])
+  write.table(t(rbind(uniques, svs)),
+              map_path, sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+}
+rm(drps)
+
+# Make sequence table
+seqtab <- makeSequenceTable(dds)
+
+### Remove chimeras
+cat("4) Remove chimeras (method = ", chimeraMethod, ")\n", sep="")
+if(chimeraMethod %in% c("pooled", "consensus")) {
+  seqtab.nochim <- removeBimeraDenovo(seqtab, method=chimeraMethod, minFoldParentOverAbundance=minParentFold, multithread=multithread)
+} else { # No chimera removal, copy seqtab to seqtab.nochim
+  seqtab.nochim <- seqtab
+}
+
+### REPORT READ FRACTIONS THROUGH PIPELINE ###
+cat("5) Report read numbers through the pipeline\n")
+# Handle edge cases: Samples lost in filtering; One sample
+track <- cbind(out, matrix(0, nrow=nrow(out), ncol=2))
+colnames(track) <- c("input", "filtered", "denoised", "non-chimeric")
+passed.filtering <- track[,"filtered"] > 0
+track[passed.filtering,"denoised"] <- rowSums(seqtab)
+track[passed.filtering,"non-chimeric"] <- rowSums(seqtab.nochim)
+head(track)
+#write.table(track, out.track, sep="\t",
+#            row.names=TRUE, col.names=col.names, quote=FALSE)
+
+### WRITE OUTPUT AND QUIT ###
+# Formatting as tsv plain-text sequence table table
+cat("6) Write output\n")
+seqtab.nochim <- t(seqtab.nochim) # QIIME has OTUs as rows
+col.names <- basename(filts)
+col.names[[1]] <- paste0("#OTU ID\t", col.names[[1]])
+write.table(seqtab.nochim, out_path, sep="\t",
+            row.names=TRUE, col.names=col.names, quote=FALSE)
+#saveRDS(seqtab.nochim, gsub("tsv", "rds", out_path)) ### TESTING
+
+q(status=0)
