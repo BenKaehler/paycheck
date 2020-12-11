@@ -225,6 +225,12 @@ def generate_folds(
     type=str,
     help="Directory of Classifier",
 )
+@click.option(
+    "--weighted/--not-weighted",
+    default=True,
+    type=bool,
+    help="Perform weighted classification"
+)
 def cross_validate_classifier(
     ref_taxa,
     ref_seqs,
@@ -237,6 +243,7 @@ def cross_validate_classifier(
     log_level,
     confidence,
     classifier_directory,
+    weighted
 ):
 
     classifier_spec = classifier_spec.read()
@@ -268,7 +275,7 @@ def cross_validate_classifier(
         test_samples = load_simulated_samples(fold, results_dir)
 
         # load the test seqs, training taxa, traing seqs, and weights
-        weights = Artifact.load(weights_file)
+        weights = Artifact.load(weights_file) if weighted else None
         # test_seqs = Artifact.load(test_seqs_file)
         train_taxa = Artifact.load(training_taxa_file)
 
