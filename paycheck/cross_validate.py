@@ -503,10 +503,10 @@ def cross_validate_keras(
     help="Directory of Classifier",
 )
 @click.option(
-    "--weighted/--not-weighted",
-    default=True,
-    type=bool,
-    help="Perform weighted classification"
+    "--weights",
+    required=False,
+    type=click.Path(exists=True),
+    help="Taxonomic weights - uniform assumed if absent (qza)"
 )
 def cross_validate_perfect(
     ref_taxa,
@@ -518,7 +518,7 @@ def cross_validate_perfect(
     log_level,
     confidence,
     classifier_directory,
-    weighted
+    weights
 ):
 
     # set up logging
@@ -538,7 +538,18 @@ def cross_validate_perfect(
         "FeatureData[Sequence]", DNAIterator(ref_seqs)
     )
 
-    if not weighted:
+    if weights:
+        # load the weights
+        weights = Artifact.load(weights)
+
+        # create a perfect classifier
+        classifier = create_perfect_classifier(
+            ref_taxa,
+            ref_seqs,
+            confidence,
+            weights=weights.view(Table)
+        )
+    else:
         # create a perfect classifier
         classifier = create_perfect_classifier(
             ref_taxa,
@@ -555,21 +566,6 @@ def cross_validate_perfect(
         if check_observed(classifier_directory, test_samples, obs_dir):
             logging.info("Skipping " + fold)
             continue
-
-        if weighted:
-            # load new file for different folds
-            weights_file = join(fold, "weights.qza")
-
-            # load the weights
-            weights = Artifact.load(weights_file)
-
-            # create a perfect classifier
-            classifier = create_perfect_classifier(
-                ref_taxa,
-                ref_seqs,
-                confidence,
-                weights=weights.view(Table)
-            )
 
         # train the weighted classifier and classify the test samples
         classification = classify_samples_perfect(
