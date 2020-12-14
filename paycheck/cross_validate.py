@@ -508,6 +508,132 @@ def cross_validate_keras(
     type=click.Path(exists=True),
     help="Taxonomic weights - uniform assumed if absent (qza)"
 )
+def cross_validate_stochastic(
+    ref_taxa,
+    ref_seqs,
+    obs_dir,
+    results_dir,
+    intermediate_dir,
+    log_file,
+    log_level,
+    confidence,
+    classifier_directory,
+    weights
+):
+
+    # set up logging
+    setup_logging(log_level, log_file)
+    logging.info(locals())
+
+    # load folds
+    taxon_defaults_file = join(intermediate_dir, "taxon_defaults.json")
+    with open(taxon_defaults_file) as fh:
+        taxon_defaults = json.load(fh)
+    folds = glob.glob(join(intermediate_dir, "fold-*"))
+    logging.info("Got folds")
+
+    # load ref_seq
+    ref_taxa, ref_seqs = load_references(ref_taxa, ref_seqs)
+    ref_seqs = Artifact.import_data(
+        "FeatureData[Sequence]", DNAIterator(ref_seqs)
+    )
+
+    if weights:
+        # load the weights
+        weights = Artifact.load(weights)
+
+        # create a perfect classifier
+        classifier = create_stochastic_classifier(
+            ref_taxa,
+            ref_seqs,
+            confidence,
+            weights=weights.view(Table)
+        )
+    else:
+        # create a perfect classifier
+        classifier = create_stochastic_classifier(
+            ref_taxa,
+            ref_seqs,
+            confidence
+        )
+
+    # for each fold
+    for fold in folds:
+        # load the simulated test samples
+        test_samples = load_simulated_samples(fold, results_dir)
+
+        # check to see whether we have already done this fold
+        if check_observed(classifier_directory, test_samples, obs_dir):
+            logging.info("Skipping " + fold)
+            continue
+
+        # train the weighted classifier and classify the test samples
+        classification = classify_samples_stochastic(
+            classifier,
+            ref_seqs,
+            test_samples
+        )
+
+        # save the classified taxonomy artifacts
+        save_observed(
+            classifier_directory, test_samples, classification, obs_dir
+        )
+        logging.info("Done " + fold)
+
+
+@click.command()
+@click.option(
+    "--ref-taxa",
+    required=True,
+    type=click.Path(exists=True),
+    help="Greengenes reference taxa (tsv)",
+)
+@click.option(
+    "--ref-seqs",
+    required=True,
+    type=click.Path(exists=True),
+    help="Greengenes reference sequences (fasta)",
+)
+@click.option(
+    "--obs-dir",
+    required=True,
+    type=str,
+    help="Subdirectory into which the results will be saved",
+)
+@click.option(
+    "--results-dir",
+    required=True,
+    type=click.Path(exists=True),
+    help="Directory that will contain the result subdirectories",
+)
+@click.option(
+    "--intermediate-dir",
+    default=tempfile.TemporaryDirectory(),
+    type=click.Path(exists=True),
+    help="Directory for checkpointing",
+)
+@click.option("--log-file", type=click.Path(), help="Log file")
+@click.option(
+    "--log-level",
+    type=click.Choice("DEBUG INFO WARNING ERROR CRITICAL".split()),
+    default="WARNING",
+    help="Log level",
+)
+@click.option(
+    "--confidence", required=True, type=float, help="Number of Confidence"
+)
+@click.option(
+    "--classifier-directory",
+    required=True,
+    type=str,
+    help="Directory of Classifier",
+)
+@click.option(
+    "--weights",
+    required=False,
+    type=click.Path(exists=True),
+    help="Taxonomic weights - uniform assumed if absent (qza)"
+)
 def cross_validate_perfect(
     ref_taxa,
     ref_seqs,
@@ -1113,6 +1239,76 @@ def classify_samples_keras(
     return classification
 
 
+def create_stochastic_classifier(
+    ref_taxa,
+    ref_seqs,
+    confidence,
+    weights=None,
+):
+    by_seq = defaultdict(dict)
+    for seq in ref_seqs.view(DNAIterator):
+        taxon = ref_taxa[seq.metadata['id']]
+        if not weights:
+            weight = 1
+        elif weights.exists(taxon, 'observation'):
+            weight = float(weights.get_value_by_ids(taxon, 'Weight'))
+        else:
+            weight = float(weights.min())
+        by_seq[str(seq)][taxon] = weight
+
+    classifier = {}
+    for seq, weights in by_seq.items():
+        total = sum(weights.values())
+        weighted = []
+        for taxon, weight in weights.items():
+            weighted.append((weight/total, taxon + '; '))
+
+        while True:
+            new_weighted = Counter()
+            for weight, taxon in weighted:
+                new_weighted[taxon.rsplit('; ', 1)[0]] += weight
+            taxa, probs = map(numpy.array, zip(*new_weighted.items()))
+            taxa = taxa[probs >= confidence]
+            probs = probs[probs >= confidence]
+            taxa_with_confidence = list(zip(probs, taxa))
+            probs /= probs.sum()
+            if len(taxa) > 0:
+                classifier[seq] = taxa_with_confidence, probs
+                break
+            weighted = [(w, t) for t, w in new_weighted.items()]
+
+    def stochastic_classifier(seq):
+        a, p = classifier[seq]
+        return a[numpy.random.choice(range(len(p)), p=p)]
+    return stochastic_classifier
+
+
+def classify_samples_stochastic(classifier, ref_seqs, test_samples):
+    test_ids = set(test_samples.ids(axis="observation"))
+    test_seqs = ref_seqs.view(DNAIterator)
+    test_seqs = [s for s in test_seqs if s.metadata["id"] in test_ids]
+
+    logging.info(
+        "Commencing classification of "
+        + str(len(test_seqs))
+        + " sequences"
+    )
+
+    seq_ids, taxonomy, confidence = [], [], []
+    for seq in test_seqs:
+        seq_ids.append(seq.metadata['id'])
+        c, t = classifier(str(seq))
+        taxonomy.append(t)
+        confidence.append(c)
+    classification = DataFrame({'Taxon': taxonomy, 'Confidence': confidence},
+                               index=seq_ids, columns=['Taxon', 'Confidence'])
+    classification.index.name = 'Feature ID'
+    classification = Artifact.import_data(
+        "FeatureData[Taxonomy]", classification)
+    logging.info("Got some classifications")
+    return classification
+
+
 def create_perfect_classifier(
     ref_taxa,
     ref_seqs,
@@ -1141,7 +1337,10 @@ def create_perfect_classifier(
             new_weighted = Counter()
             for weight, taxon in weighted:
                 new_weighted[taxon.rsplit('; ', 1)[0]] += weight
-            mc = new_weighted.most_common()[0]
+            most_common = new_weighted.most_common()
+            most_common = [mc for mc in most_common
+                           if numpy.isclose(most_common[0][1], mc[1])]
+            mc = most_common[numpy.random.randint(len(most_common))]
             if mc[1] >= confidence:
                 classifier[seq] = mc[1], mc[0]
                 break

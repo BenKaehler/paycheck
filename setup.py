@@ -28,6 +28,8 @@ setup(
          'paycheck_cv_keras='
          'paycheck.cross_validate:cross_validate_keras',
          'paycheck_cv_perfect='
-         'paycheck.cross_validate:cross_validate_perfect']
+         'paycheck.cross_validate:cross_validate_perfect',
+         'paycheck_cv_stochastic='
+         'paycheck.cross_validate:cross_validate_stochastic']
     }
 )
