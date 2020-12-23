@@ -24,6 +24,12 @@ setup(
          'paycheck_generate_folds='
          'paycheck.cross_validate:generate_folds',
          'paycheck_cv_classifier='
-         'paycheck.cross_validate:cross_validate_classifier']
+         'paycheck.cross_validate:cross_validate_classifier',
+         'paycheck_cv_keras='
+         'paycheck.cross_validate:cross_validate_keras',
+         'paycheck_cv_perfect='
+         'paycheck.cross_validate:cross_validate_perfect',
+         'paycheck_cv_stochastic='
+         'paycheck.cross_validate:cross_validate_stochastic']
     }
 )
